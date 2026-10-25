@@ -1,0 +1,247 @@
+@import "tailwindcss" source(none);
+
+@source "../app";
+@source "../components";
+@source "../lib";
+
+@theme {
+  --color-ink: #12222e;
+  --color-blue: #1664b0;
+  --color-sand: #efe8de;
+  --color-red: #d21624;
+  --color-paper: #fcfaf6;
+  --color-muted: #5f6b73;
+  --color-line: #d7cec1;
+}
+
+body {
+  font-family: var(--font-public-sans), sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+h1,
+h2,
+h3,
+h4,
+.disp {
+  font-family: var(--font-bricolage), sans-serif;
+  letter-spacing: -0.035em;
+}
+
+.kicker {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--color-line);
+  border-radius: 3px;
+}
+
+.inp {
+  width: 100%;
+  border: 1px solid #c9c0b2;
+  border-radius: 2px;
+  background: #fff;
+  padding: 0.8rem 0.9rem;
+  font-weight: 600;
+  font-size: 1rem;
+  outline: none;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+
+.inp:focus {
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 3px rgba(22, 100, 176, 0.12);
+}
+
+.opt {
+  border: 1px solid var(--color-line);
+  border-radius: 2px;
+  background: #fff;
+  text-align: left;
+  padding: 0.9rem;
+  transition:
+    border-color 0.16s,
+    background 0.16s,
+    transform 0.16s;
+}
+
+.opt:hover {
+  border-color: var(--color-blue);
+}
+
+.opt.on {
+  border-color: var(--color-blue);
+  background: var(--color-sand);
+  box-shadow: inset 0 0 0 1px var(--color-blue);
+}
+
+.btn {
+  background: var(--color-red);
+  color: #fff;
+  font-weight: 800;
+  border-radius: 2px;
+  padding: 0.9rem 1.3rem;
+  transition:
+    background 0.16s,
+    transform 0.16s;
+}
+
+.btn:hover {
+  background: #b3121e;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  background: #ddd5c8;
+  color: #8e857a;
+  pointer-events: none;
+}
+
+.btn-blue {
+  background: var(--color-blue);
+  color: #fff;
+  font-weight: 800;
+  border-radius: 2px;
+  padding: 0.9rem 1.3rem;
+  transition: background 0.16s;
+}
+
+.btn-blue:hover {
+  background: #125590;
+}
+
+.btn-blue:disabled {
+  background: #d6dde4;
+  color: #7b8790;
+  pointer-events: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ink);
+  font-weight: 700;
+  border: 1px solid var(--color-ink);
+  border-radius: 2px;
+  padding: 0.85rem 1.2rem;
+  transition:
+    background 0.16s,
+    color 0.16s;
+}
+
+.btn-ghost:hover {
+  background: var(--color-ink);
+  color: var(--color-sand);
+}
+
+.chip {
+  border: 1px solid var(--color-line);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--color-muted);
+  transition:
+    background 0.16s,
+    color 0.16s,
+    border-color 0.16s;
+}
+
+.chip.on {
+  background: var(--color-blue);
+  border-color: var(--color-blue);
+  color: #fff;
+}
+
+.dir-row {
+  transition:
+    background 0.16s,
+    color 0.16s;
+}
+
+.dir-row:hover {
+  background: var(--color-sand);
+}
+
+.dir-row:hover .dir-arrow {
+  background: var(--color-red);
+  color: #fff;
+  border-color: var(--color-red);
+}
+
+.stamp {
+  border: 2px solid var(--color-red);
+  border-radius: 2px;
+  color: var(--color-red);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transform: rotate(-2deg);
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+details[open] .pl {
+  transform: rotate(45deg);
+}
+
+details[open] .chev {
+  transform: rotate(180deg);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.rise-1 { animation-delay: 60ms; }
+.rise-2 { animation-delay: 130ms; }
+.rise-3 { animation-delay: 200ms; }
+.rise-4 { animation-delay: 270ms; }
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .spin {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media print {
+  header,
+  footer,
+  .no-print {
+    display: none !important;
+  }
+}
