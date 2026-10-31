@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { GAMES, gameNames } from "@/lib/games";
+import type { Game } from "@/lib/games";
 import { operator, rp } from "@/lib/format";
 import { saveOrder } from "@/lib/store";
 import type { OrderLine } from "@/lib/store";
+import type { Service } from "@/lib/services";
 import { TAB_EVENT } from "./TabLink";
 import { OperatorLogo } from "./OperatorLogo";
 
@@ -71,8 +72,15 @@ const SERVICE_SLUG: Record<TabKey, string> = {
 
 const digits = (v: string) => v.replace(/\D/g, "");
 
-export function BuyWidget() {
+export function BuyWidget({
+  services,
+  games,
+}: {
+  services: Service[];
+  games: Record<string, Game>;
+}) {
   const router = useRouter();
+  const gameNames = Object.keys(games);
 
   const [tab, setTab] = useState<TabKey>("pulsa");
   const [game, setGame] = useState(gameNames[0]);
@@ -95,11 +103,14 @@ export function BuyWidget() {
     setSel(null);
   }, [tab, game]);
 
-  const products: [string, number][] = tab === "game" ? GAMES[game].chips.map(([a, , p]) => [a, p]) : P[tab].n;
+  const products: [string, number, string?][] =
+    tab === "game"
+      ? games[game].chips.map(([name, , price, dbId]) => [name, price, dbId])
+      : P[tab].n.map(([name, price]) => [name, price]);
   const op = tab === "pulsa" || tab === "data" || tab === "ewallet" ? operator(num) : "";
   const selected = sel !== null ? products[sel] : null;
   const price = selected ? selected[1] : 0;
-  const zoneVisible = tab === "game" && GAMES[game].zone;
+  const zoneVisible = tab === "game" && games[game].zone;
   const canPay = price > 0 && digits(num).length >= (tab === "game" ? 5 : 8);
 
   const selectTab = useCallback((key: TabKey) => {
@@ -108,8 +119,19 @@ export function BuyWidget() {
   }, []);
 
   const handlePay = () => {
+    if (tab === "tagihan") {
+      router.push("/layanan/pdam/");
+      return;
+    }
     if (!canPay || !selected) return;
+    const serviceSlug = SERVICE_SLUG[tab];
+    const hydratedService = services.find((row) => row.slug === serviceSlug);
+    const dbItem = hydratedService?.items?.find((row) => row[2] === price);
+    const dbProductId = tab === "game" ? selected[2] : dbItem?.[3];
+    if (!hydratedService?.dbServiceId || !dbProductId) return;
+
     const service = tab === "game" ? game : SERVICE_NAME[tab];
+    const target = zoneVisible && zone ? `${num} (${zone})` : num;
     const lines: OrderLine[] = [
       ["Layanan", service],
       [P[tab].l, num + (op ? ` · ${op}` : "")],
@@ -119,13 +141,20 @@ export function BuyWidget() {
 
     saveOrder({
       ok: true,
-      slug: SERVICE_SLUG[tab],
+      slug: serviceSlug,
       service,
       product: selected[0],
       price,
       admin: 0,
       lines,
       type: tab === "game" ? "game" : "prepaid",
+      dbServiceId: hydratedService.dbServiceId,
+      dbProductId,
+      target,
+      input: {
+        nomor_tujuan: target,
+        ...(tab === "game" ? { game, zone } : {}),
+      },
     });
     router.push("/checkout/");
   };
@@ -192,12 +221,12 @@ export function BuyWidget() {
                         active ? "bg-[#1664B0] text-[#EFE8DE]" : "bg-[#12222E] text-[#EFE8DE]"
                       }`}
                     >
-                      {GAMES[name].mark}
+                      {games[name].mark}
                     </span>
                     <span className="min-w-0">
                       <span className="block text-[11px] font-bold leading-tight truncate">{name}</span>
                       <span className="block text-[9px] uppercase tracking-wider text-[#5F6B73] mt-0.5">
-                        {GAMES[name].tag}
+                        {games[name].tag}
                       </span>
                     </span>
                   </button>

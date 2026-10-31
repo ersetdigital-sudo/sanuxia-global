@@ -5,6 +5,7 @@ import { ServiceHero } from "@/components/ServiceHero";
 import { ServiceForm } from "@/components/ServiceForm";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { services, serviceBySlug } from "@/lib/services";
+import { getHydratedService } from "@/lib/catalog-hydrate";
 
 export function generateStaticParams() {
   return services.map((s) => ({ slug: s.slug }));
@@ -22,10 +23,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ServicePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const service = serviceBySlug(slug);
+  const { services: hydratedServices, games, service } = await getHydratedService(slug);
   if (!service) notFound();
 
-  const others = services.filter((s) => s.slug !== service.slug);
+  const others = hydratedServices.filter((s) => s.slug !== service.slug);
   const index = services.findIndex((s) => s.slug === service.slug);
 
   return (
@@ -49,7 +50,7 @@ export default async function ServicePage({ params }: { params: Promise<{ slug: 
         <ServiceHero service={service} index={index} />
 
         <div className="px-4 md:px-5 pt-4 md:pt-6">
-          <ServiceForm service={service} others={others} />
+          <ServiceForm service={service} others={others} games={games} />
         </div>
       </main>
     </>

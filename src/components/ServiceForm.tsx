@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { GAMES, gameNames } from "@/lib/games";
+import type { Game } from "@/lib/games";
 import { hash, operator, rp } from "@/lib/format";
 import { ADMIN_WHATSAPP, ADMIN_WHATSAPP_DISPLAY, saveOrder } from "@/lib/store";
 import type { OrderLine } from "@/lib/store";
@@ -12,10 +12,19 @@ import { Icon } from "./Icons";
 import { OperatorLogo } from "./OperatorLogo";
 import { operatorNames } from "@/lib/operators";
 
-type Bill = { name: string; amt: number; period: string };
+type Bill = { name: string; amt: number; period: string; product: string; dbProductId: string };
 
-export function ServiceForm({ service, others }: { service: Service; others: Service[] }) {
+export function ServiceForm({
+  service,
+  others,
+  games,
+}: {
+  service: Service;
+  others: Service[];
+  games: Record<string, Game>;
+}) {
   const router = useRouter();
+  const gameNames = Object.keys(games);
   const fieldsRef = useRef<HTMLDivElement>(null);
 
   const [game, setGame] = useState(gameNames[0]);
@@ -46,7 +55,7 @@ export function ServiceForm({ service, others }: { service: Service; others: Ser
 
   const fields = useMemo<Field[]>(() => {
     if (service.type !== "game") return service.fields;
-    const g = GAMES[game];
+    const g = games[game];
     const list: Field[] = [{ id: "target", label: "User ID", ph: "Masukkan User ID", num: true }];
     if (g.zone) {
       list.push({
@@ -57,15 +66,15 @@ export function ServiceForm({ service, others }: { service: Service; others: Ser
       });
     }
     return list;
-  }, [service, game]);
+  }, [service, game, games]);
 
-  const items = service.type === "game" ? GAMES[game].items : (service.items ?? []);
+  const items = service.type === "game" ? games[game].items : (service.items ?? []);
   const targetField = fields.find((f) => f.id === "target");
   const opTag = targetField?.op ? operator(vals.target ?? "") : "";
   const digits = (v: string) => v.replace(/\D/g, "");
   const target = digits(vals.target ?? "");
   const okT = target.length >= (service.type === "game" ? 5 : 8);
-  const okZ = !(service.type === "game" && GAMES[game].zone) || (vals.zone ?? "").trim().length > 0;
+  const okZ = !(service.type === "game" && games[game].zone) || (vals.zone ?? "").trim().length > 0;
 
   const order = useMemo(() => {
     const lines: OrderLine[] = [["Layanan", service.type === "game" ? game : service.name]];
@@ -74,28 +83,42 @@ export function ServiceForm({ service, others }: { service: Service; others: Ser
     if (target && targetField) {
       lines.push([targetField.label, `${vals.target}${opTag ? ` · ${opTag}` : ""}`]);
     }
-    if (vals.zone) lines.push([GAMES[game].label || "Zone ID", vals.zone]);
+    if (vals.zone) lines.push([games[game].label || "Zone ID", vals.zone]);
 
     let price = 0;
     let product = "";
     let admin = 0;
+    let dbProductId = "";
 
     if (service.type === "bill") {
       if (bill) {
         lines.push(["Nama", bill.name], ["Periode", bill.period]);
         price = bill.amt;
-        admin = service.admin ?? 0;
-        product = `Tagihan ${service.name}`;
+        admin = 0;
+        product = bill.product;
+        dbProductId = bill.dbProductId;
       }
     } else if (item !== null && items[item]) {
       const it = items[item];
       product = it[0];
       price = it[2];
+      dbProductId = it[3] ?? "";
       lines.push(["Produk", it[1] ? `${it[0]} (${it[1]})` : it[0]]);
     }
 
+    const ok = okT && okZ && (service.type === "bill" ? !!bill : item !== null);
+    const composedTarget =
+      service.type === "game" && vals.zone
+        ? `${target} (${vals.zone})`
+        : target;
+    const input: Record<string, string> = {
+      ...vals,
+      ...(service.type === "game" ? { game } : {}),
+      nomor_tujuan: composedTarget,
+    };
+
     return {
-      ok: okT && okZ && (service.type === "bill" ? !!bill : item !== null),
+      ok,
       slug: service.slug,
       service: service.name,
       product,
@@ -103,6 +126,10 @@ export function ServiceForm({ service, others }: { service: Service; others: Ser
       admin,
       lines,
       type: service.type,
+      dbServiceId: service.dbServiceId,
+      dbProductId,
+      target: composedTarget,
+      input,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [service, fields, items, game, vals, item, bill, target, targetField, opTag, okT, okZ]);
@@ -128,15 +155,26 @@ export function ServiceForm({ service, others }: { service: Service; others: Ser
       setBillError("ID minimal 6 digit.");
       return;
     }
-    const h = hash(id + service.slug);
-    let amt = 50000 + (h % 300) * 1000;
-    if (service.slug === "bpjs-kesehatan") {
-      const months = parseInt(vals.provider) || 1;
-      amt = 35000 * months * (1 + (h % 4));
+    const months = parseInt(vals.provider) || 1;
+    const productItem =
+      service.slug === "bpjs-kesehatan"
+        ? (service.items?.[months - 1] ?? service.items?.[0])
+        : service.items?.[0];
+    if (!productItem) {
+      setBill(null);
+      setBillError("Tagihan belum tersedia. Coba lagi sebentar.");
+      return;
     }
+    const h = hash(id + service.slug);
     const name = `Pelanggan ${String.fromCharCode(65 + (h % 26))}*** ${String.fromCharCode(65 + ((h >> 3) % 26))}***`;
     const period = new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
-    setBill({ name, amt, period });
+    setBill({
+      name,
+      amt: productItem[2],
+      period,
+      product: productItem[0],
+      dbProductId: productItem[3] ?? "",
+    });
     setBillError("");
   };
 
@@ -243,12 +281,12 @@ export function ServiceForm({ service, others }: { service: Service; others: Ser
                           active ? "bg-[#D21624] text-[#EFE8DE]" : "bg-[#1664B0] text-[#EFE8DE]"
                         }`}
                       >
-                        {GAMES[name].mark}
+                        {games[name].mark}
                       </span>
                       <span className="min-w-0">
                         <span className="block text-xs font-bold leading-tight truncate">{name}</span>
                         <span className="block text-[9px] uppercase tracking-wider text-[#5F6B73] mt-0.5">
-                          {GAMES[name].tag}
+                          {games[name].tag}
                         </span>
                       </span>
                     </button>
@@ -308,10 +346,12 @@ export function ServiceForm({ service, others }: { service: Service; others: Ser
                       <span className="text-[#5F6B73]">Tagihan</span>
                       <b>{rp(bill.amt)}</b>
                     </div>
-                    <div className="flex justify-between gap-3">
-                      <span className="text-[#5F6B73]">Biaya admin</span>
-                      <b>{rp(service.admin ?? 0)}</b>
-                    </div>
+                    {(service.admin ?? 0) > 0 ? (
+                      <div className="flex justify-between gap-3">
+                        <span className="text-[#5F6B73]">Biaya admin</span>
+                        <b>{rp(service.admin ?? 0)}</b>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               )}

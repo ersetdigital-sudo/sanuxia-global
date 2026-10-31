@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "./Icons";
 import { rp } from "@/lib/format";
@@ -8,102 +8,105 @@ import {
   ADMIN_WHATSAPP,
   ADMIN_WHATSAPP_DISPLAY,
   QRIS_IMAGE,
-  clearOrder,
   loadOrder,
-  loadOrders,
-  saveOrders,
 } from "@/lib/store";
-import type { Order, SavedOrder } from "@/lib/store";
+import type { Order } from "@/lib/store";
+import { createOrder } from "@/lib/db/client";
+import { toPublicError } from "@/lib/db/errors";
 
-type Method = { id: "qris"; n: string; fee: number; pct: number; group: string };
-
-const METHOD: Method = { id: "qris", n: "QRIS", fee: 0, pct: 0.007, group: "QRIS" };
-
-export function CheckoutClient() {
+export function CheckoutClient({
+  brandSlug,
+  qrisMethodId,
+  qrisImageUrl,
+}: {
+  brandSlug: string;
+  qrisMethodId: string | null;
+  qrisImageUrl: string | null;
+}) {
   const [order, setOrder] = useState<Order | null>(null);
   const [ready, setReady] = useState(false);
   const [inv, setInv] = useState("");
-  const method = METHOD;
-  const [left, setLeft] = useState(900);
+  const [expiresAt, setExpiresAt] = useState(0);
+  const [orderTotal, setOrderTotal] = useState(0);
+  const [left, setLeft] = useState(0);
   const [timedOut, setTimedOut] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [payError, setPayError] = useState("");
 
-  const leftRef = useRef(900);
+  const createdRef = useRef(false);
 
   useEffect(() => {
     setOrder(loadOrder());
-    setInv("SNX" + Date.now().toString().slice(-9));
     setReady(true);
   }, []);
 
-  const fee = useMemo(() => {
-    if (!order) return 0;
-    return Math.round(method.fee + method.pct * (order.price + order.admin));
-  }, [order, method]);
+  async function create() {
+    if (!order?.dbServiceId || !order.dbProductId || !order.target) {
+      setPayError("Data pesanan belum lengkap. Ulangi dari halaman layanan.");
+      createdRef.current = false;
+      return;
+    }
+    if (!qrisMethodId || !brandSlug) {
+      setPayError("Pembayaran belum tersedia. Coba lagi sebentar.");
+      createdRef.current = false;
+      return;
+    }
 
-  const total = order ? order.price + order.admin + fee : 0;
-
-  const saveOrd = useCallback(
-    (status: "pending" | "processing") => {
-      if (!order) return;
-      const all = loadOrders();
-      const i = all.findIndex((x) => x.inv === inv);
-      const prev = i >= 0 ? all[i] : undefined;
-      const record: SavedOrder = {
-        inv,
-        status,
-        service: order.service,
-        product: order.product,
-        lines: order.lines,
-        method: method.n,
-        total: order.price + order.admin + fee,
-        contact: "",
-        sn: prev?.sn || "",
-        label: prev?.label || "",
-        created: prev?.created ?? Date.now(),
-        updated: Date.now(),
-      };
-      if (status === "processing") record.paidAt = Date.now();
-      if (i >= 0) all[i] = record;
-      else all.unshift(record);
-      saveOrders(all);
-    },
-    [order, inv, method, fee],
-  );
-
-  useEffect(() => {
-    if (!ready || !order) return;
-    saveOrd("pending");
-  }, [ready, order, saveOrd]);
+    setCreating(true);
+    setPayError("");
+    try {
+      const created = await createOrder({
+        brandSlug,
+        serviceId: order.dbServiceId,
+        productId: order.dbProductId,
+        nomorTujuan: order.target,
+        input: { ...(order.input ?? {}), nomor_tujuan: order.target },
+        paymentMethodId: qrisMethodId,
+      });
+      setInv(created.ref);
+      setOrderTotal(created.total);
+      setExpiresAt(new Date(created.expires_at).getTime());
+      setLeft(Math.max(1, Math.ceil((new Date(created.expires_at).getTime() - Date.now()) / 1000)));
+      setTimedOut(false);
+    } catch (orderFailure) {
+      setPayError(toPublicError(orderFailure).message);
+      createdRef.current = false;
+    } finally {
+      setCreating(false);
+    }
+  }
 
   useEffect(() => {
-    if (!ready || !order || paid) return;
-    const t = setInterval(() => {
-      leftRef.current -= 1;
-      setLeft(leftRef.current);
-      if (leftRef.current <= 0) {
-        clearInterval(t);
-        setTimedOut(true);
-      }
-    }, 1000);
-    return () => clearInterval(t);
-  }, [ready, order, paid]);
+    if (!ready || !order || createdRef.current) return;
+    createdRef.current = true;
+    void create();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, order]);
 
-  const markPaid = () => {
-    if (!order) return;
-    saveOrd("processing");
-    clearOrder();
-    setPaid(true);
-  };
+  useEffect(() => {
+    if (!expiresAt || paid) return;
+    const tick = () => {
+      const next = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      setLeft(next);
+      if (next <= 0) setTimedOut(true);
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt, paid]);
+
+  const total = order ? order.price + order.admin : 0;
+  const displayTotal = inv && orderTotal ? orderTotal : total;
 
   const summaryRows = useMemo(() => {
     if (!order) return [];
-    const rows: [string, string][] = order.lines.map(([k, v]) => [k, v]);
+    const rows: [string, string][] = order.lines.map(([key, value]) => [key, value]);
     rows.push(["Harga", rp(order.price)]);
     if (order.admin) rows.push(["Biaya admin", rp(order.admin)]);
-    rows.push(["Biaya layanan (QRIS)", fee ? rp(fee) : "Gratis"]);
+    rows.push(["Biaya layanan (QRIS)", "Gratis"]);
     return rows;
-  }, [order, fee]);
+  }, [order]);
 
   if (!ready) return <div className="h-40" />;
 
@@ -143,19 +146,19 @@ export function CheckoutClient() {
             </div>
 
             <div className="mt-4 space-y-2.5 text-sm">
-              {order.lines.map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-4">
-                  <span className="text-[#5F6B73]">{k}</span>
-                  <b className="text-right">{v}</b>
+              {order.lines.map(([key, value]) => (
+                <div key={key} className="flex justify-between gap-4">
+                  <span className="text-[#5F6B73]">{key}</span>
+                  <b className="text-right">{value}</b>
                 </div>
               ))}
               <div className="flex justify-between gap-4">
                 <span className="text-[#5F6B73]">Metode</span>
-                <b>{method.n}</b>
+                <b>QRIS</b>
               </div>
               <div className="flex justify-between gap-4 pt-2 border-t border-[#D7CEC1]">
                 <span className="text-[#5F6B73]">Total pembayaran</span>
-                <b className="text-lg">{rp(total)}</b>
+                <b className="text-lg">{rp(displayTotal)}</b>
               </div>
             </div>
 
@@ -183,16 +186,20 @@ export function CheckoutClient() {
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
             <div>
               <div className="kicker text-[#EFE8DE]/60">Invoice / Sanuxia Global</div>
-              <div className="font-mono text-xl font-bold mt-1">{inv}</div>
+              <div className="font-mono text-xl font-bold mt-1">
+                {inv || (creating ? "Menyiapkan pembayaran…" : "—")}
+              </div>
             </div>
             <div className="sm:text-right">
               <div className="text-[10px] font-bold uppercase tracking-[.16em] text-[#EFE8DE]/60">
                 Selesaikan dalam
               </div>
               <div className="disp text-2xl font-extrabold mt-0.5">
-                {timedOut
-                  ? "Waktu habis"
-                  : `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`}
+                {!inv
+                  ? "—"
+                  : timedOut
+                    ? "Waktu habis"
+                    : `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`}
               </div>
             </div>
           </div>
@@ -205,15 +212,33 @@ export function CheckoutClient() {
               <div className="text-sm font-bold">QRIS</div>
               <div className="text-[10px] text-[#5F6B73]">Semua e-wallet & m-banking</div>
             </div>
-            <div className="text-[10px] font-bold text-[#1664B0]">+0,7%</div>
+            <div className="text-[10px] font-bold text-[#1664B0]">Gratis</div>
           </div>
 
           <div className="kicker text-[#D21624] mt-5">02 / Bayar</div>
 
+          {payError ? (
+            <div className="mt-2 border border-[#D21624] bg-[#FFF5F5] p-3 text-xs text-[#C81E3C]">
+              <p className="font-bold">{payError}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!creating) {
+                    createdRef.current = true;
+                    void create();
+                  }
+                }}
+                className="mt-2 border border-[#D21624] px-3 py-1.5 font-bold text-[#D21624]"
+              >
+                Coba lagi
+              </button>
+            </div>
+          ) : null}
+
           <div className="mt-2 border border-[#D7CEC1] bg-[#EFE8DE] p-3 md:p-4">
             <div className="mx-auto max-w-[320px] bg-white border border-[#D7CEC1] p-2.5">
               <img
-                src={QRIS_IMAGE}
+                src={qrisImageUrl || QRIS_IMAGE}
                 alt="Kode QRIS Sanuxia Global"
                 width={640}
                 height={640}
@@ -224,14 +249,19 @@ export function CheckoutClient() {
             <div className="mt-3 flex items-end justify-between gap-3 max-w-[320px] mx-auto">
               <div>
                 <div className="kicker text-[#5F6B73]">Total bayar</div>
-                <div className="disp text-xl font-extrabold mt-0.5">{rp(total)}</div>
+                <div className="disp text-xl font-extrabold mt-0.5">{rp(displayTotal)}</div>
               </div>
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#1664B0]">QRIS</div>
             </div>
           </div>
 
-          <button type="button" onClick={markPaid} disabled={timedOut} className="btn w-full mt-4">
-            Saya sudah bayar
+          <button
+            type="button"
+            onClick={() => setPaid(true)}
+            disabled={timedOut || creating || !inv}
+            className="btn w-full mt-4 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating ? "Menyiapkan…" : "Saya sudah bayar"}
           </button>
           <p className="text-center text-xs text-[#5F6B73] mt-3">
             Ada kendala? Hubungi admin{" "}
@@ -248,16 +278,16 @@ export function CheckoutClient() {
           <Icon name="card" size={16} stroke="#1664B0" />
         </div>
         <div className="mt-3 space-y-2.5 text-sm">
-          {summaryRows.map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-3">
-              <span className="text-[#5F6B73]">{k}</span>
-              <b className={`text-right ${k.startsWith("Promo") ? "text-[#1664B0]" : ""}`}>{v}</b>
+          {summaryRows.map(([key, value]) => (
+            <div key={key} className="flex justify-between gap-3">
+              <span className="text-[#5F6B73]">{key}</span>
+              <b className="text-right">{value}</b>
             </div>
           ))}
         </div>
         <div className="mt-4 pt-4 border-t-2 border-[#12222E] flex justify-between items-baseline">
           <span className="text-[10px] font-bold uppercase tracking-[.16em] text-[#5F6B73]">Total</span>
-          <span className="disp text-2xl font-extrabold">{rp(total)}</span>
+          <span className="disp text-2xl font-extrabold">{rp(displayTotal)}</span>
         </div>
         <p className="text-[11px] text-[#5F6B73] mt-3">
           Pembayaran diverifikasi manual. Status berubah menjadi Diproses setelah kamu konfirmasi.

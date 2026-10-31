@@ -1,13 +1,18 @@
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { CheckoutClient } from "@/components/CheckoutClient";
+import { getCatalog } from "@/lib/db/server";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 export const metadata = {
   title: "Pembayaran · Sanuxia Global",
 };
 
-export default function CheckoutPage() {
+export default async function CheckoutPage() {
+  const catalog = await getCatalog();
+  const brand = catalog.data?.brand ?? null;
+  const qrisMethodId =
+    catalog.data?.methods.find((method) => method.name === "QRIS")?.id ?? null;
   return (
     <>
       <Header />
@@ -30,7 +35,11 @@ export default function CheckoutPage() {
         </div>
 
         <div className="mt-5">
-          <CheckoutClient />
+          <CheckoutClient
+          brandSlug={brand?.slug ?? ""}
+          qrisMethodId={qrisMethodId}
+          qrisImageUrl={brand?.qris_image_url ?? null}
+        />
         </div>
       </main>
 

@@ -6,6 +6,7 @@ import { BuyWidget } from "@/components/BuyWidget";
 import { CopyButton } from "@/components/CopyButton";
 import { RotatingWord } from "@/components/RotatingWord";
 import { services } from "@/lib/services";
+import { getStorefront } from "@/lib/catalog-hydrate";
 import { rp } from "@/lib/format";
 
 const FAQ = [
@@ -22,7 +23,9 @@ const categoryOf = (slug: string) => {
   return "Hiburan";
 };
 
-export default function Home() {
+export default async function Home() {
+  const storefront = await getStorefront();
+
   return (
     <>
       <Header variant="home" />
@@ -192,7 +195,7 @@ export default function Home() {
                 </a>
               </p>
             </div>
-            <BuyWidget />
+            <BuyWidget services={storefront.services} games={storefront.games} />
           </div>
         </section>
 
